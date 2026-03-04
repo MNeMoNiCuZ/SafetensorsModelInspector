@@ -300,14 +300,54 @@ def _build_metadata_blob(metadata: dict):
         if len(v) < 200:  # skip huge JSON blobs
             all_meta += " " + v
 
-    # Additionally, parse sshs_cp0/sshs_cp1 for sd_model_name hints.
+    # Additionally, parse sshs_cp0/sshs_cp1 for key training-name hints
+    # commonly embedded as large JSON strings.
     sshs_meta = ""
     for cpk in ("sshs_cp0", "sshs_cp1"):
         cpv = metadata.get(cpk, "")
         if cpv and len(cpv) > 200:
-            m = re.search(r'"ss_sd_model_name"\s*:\s*"([^"]*)"', cpv)
-            if m:
-                sshs_meta += " " + m.group(1).lower()
+            extracted = []
+
+            # Try to decode nested JSON (common in sshs_cp* fields).
+            decoded = cpv
+            for _ in range(2):
+                try:
+                    parsed = json.loads(decoded)
+                except Exception:
+                    break
+                if isinstance(parsed, str):
+                    decoded = parsed
+                    continue
+                if isinstance(parsed, dict):
+                    for field in (
+                        "ss_sd_model_name",
+                        "ss_output_name",
+                        "modelspec.title",
+                        "modelspec.description",
+                        "ss_base_model_version",
+                    ):
+                        fv = parsed.get(field)
+                        if fv:
+                            extracted.append(str(fv).lower())
+                    break
+
+            # Fallback: regex scan raw text, handling both quoted and escaped-quoted keys.
+            if not extracted:
+                cpv_l = str(cpv).lower()
+                for field in (
+                    "ss_sd_model_name",
+                    "ss_output_name",
+                    "modelspec.title",
+                    "modelspec.description",
+                    "ss_base_model_version",
+                ):
+                    pat = rf'(?:\\?"{re.escape(field)}\\?"\s*:\s*\\?"([^"\\]+))'
+                    m = re.search(pat, cpv_l)
+                    if m:
+                        extracted.append(m.group(1).lower())
+
+            if extracted:
+                sshs_meta += " " + " ".join(extracted)
     all_meta += " " + sshs_meta
     return {
         "all_meta": all_meta,
@@ -427,9 +467,7 @@ def _detect_from_metadata(metadata: dict):
 
     # Z-Image
     if "z-image" in all_meta or "zimage" in all_meta or "z_image" in all_meta:
-        if "turbo" in all_meta or "zit" in output_name:
-            return "Z-Image Turbo"
-        return "Z-Image Base"
+        return _zimage_label(metadata, all_meta)
 
     # Qwen
     if "qwen" in all_meta:
@@ -444,6 +482,34 @@ def _detect_from_metadata(metadata: dict):
 # ---------------------------------------------------------------------------
 # Key-pattern detection  (ordered most-specific → least-specific)
 # ---------------------------------------------------------------------------
+
+def _zimage_label(metadata=None, key_blob=""):
+    """Return canonical Z-Image label from behavior hints (CFG vs no-CFG)."""
+    all_hints = key_blob.lower()
+    if metadata:
+        meta = _build_metadata_blob(metadata)
+        all_hints = f"{all_hints} {meta['all_meta']}"
+
+    # Variant logic intentionally avoids model-name matching.
+    # Official behavior split: Turbo uses no CFG, Base uses CFG.
+    has_cfg_true = bool(re.search(
+        r'(?:use_cfg|do_cfg|classifier[_ ]?free[_ ]?guidance)\s*["=: ]+\s*true',
+        all_hints,
+    ))
+    has_cfg_false = bool(re.search(
+        r'(?:use_cfg|do_cfg|classifier[_ ]?free[_ ]?guidance)\s*["=: ]+\s*false',
+        all_hints,
+    ))
+
+    # Prefer Turbo when there is any explicit no-CFG signal.
+    if has_cfg_false:
+        return "Z-Image Turbo"
+    if has_cfg_true:
+        return "Z-Image Base"
+
+    # Ambiguous fallback: this helper is only called from confirmed Z-Image paths.
+    return "Z-Image Turbo"
+
 
 def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata, details):
 
@@ -534,13 +600,13 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
 
     # ── Z-Image (unique cap_embedder, hidden_dim 3840) ───────────────
     if "cap_embedder" in key_blob:
-        return _detect_zimage_variant(keys, shapes, details)
+        return _detect_zimage_variant(keys, shapes, metadata, details)
 
     # ── Z-Image LoRA (diffusion_model.layers.{N}.attention) ──────────
     #    Z-Image LoRAs use diffusion_model.layers (not transformer_blocks,
     #    not input_blocks). Hidden dim 3840.
     if "diffusion_model.layers." in key_blob and "attention" in key_blob:
-        return _detect_zimage_variant(keys, shapes, details)
+        return _detect_zimage_variant(keys, shapes, metadata, details)
     if "auraflow" in key_blob or "aura_flow" in key_blob:
         return "Aura Flow", details
 
@@ -642,7 +708,7 @@ def _detect_from_keys(keys, key_blob, shapes, total_params, components, metadata
 
     # ── Ambiguous blocks.{N} — use dimension analysis ────────────────
     if "blocks" in key_blob and ("attn" in key_blob or "self_attn" in key_blob):
-        return _detect_from_dims(keys, shapes, total_params, details)
+        return _detect_from_dims(keys, shapes, total_params, metadata, details)
 
     # ── Qwen LLM (standalone text encoder: model.layers + embed_tokens)
     if ("model.layers" in key_blob and "self_attn" in key_blob and
@@ -768,7 +834,7 @@ def _detect_sdxl_pony_ilxl(keys, metadata, details):
     return "SDXL"
 
 
-def _detect_zimage_variant(keys, shapes, details):
+def _detect_zimage_variant(keys, shapes, metadata, details):
     """Distinguish Z-Image from Lumina 2 (both use cap_embedder).
     Also handles Z-Image LoRAs with diffusion_model.layers pattern."""
     # Z-Image hidden_dim = 3840 (30 heads × 128).
@@ -777,6 +843,18 @@ def _detect_zimage_variant(keys, shapes, details):
     key_blob = "\n".join(keys)
     has_lumina_marker = "lumina" in key_blob
 
+    # Structural split from observed checkpoints:
+    # - Turbo: wrapped transformer keys under model.diffusion_model.*
+    # - Base:  flat transformer keys under layers.{N}.*
+    has_wrapped_diffusion = any(k.startswith("model.diffusion_model.") for k in keys)
+    has_flat_layers = any(re.match(r"^layers\.\d+\.", k) for k in keys)
+    if has_wrapped_diffusion:
+        details["zimage_layout"] = "wrapped_diffusion_model"
+        return "Z-Image Turbo", details
+    if has_flat_layers and not has_wrapped_diffusion:
+        details["zimage_layout"] = "flat_layers"
+        return "Z-Image Base", details
+
     # Check cap_embedder or any large weight dim.
     for k in keys:
         if "cap_embedder" in k and k.endswith(".weight"):
@@ -784,7 +862,7 @@ def _detect_zimage_variant(keys, shapes, details):
             if s:
                 max_dim = max(s)
                 if max_dim >= 3840:
-                    return "Z-Image", details
+                    return _zimage_label(metadata, key_blob), details
                 if 2280 <= max_dim <= 2320:
                     return "Lumina 2", details
                 if max_dim >= 2304 and max_dim < 3840 and has_lumina_marker:
@@ -793,7 +871,7 @@ def _detect_zimage_variant(keys, shapes, details):
     # For LoRAs, check dimension of lora_up weights
     up_dims = _collect_lora_up_dims(keys, shapes)
     if any(3800 <= d <= 3900 for d in up_dims):
-        return "Z-Image", details
+        return _zimage_label(metadata, key_blob), details
     if any(2280 <= d <= 2320 for d in up_dims):
         return "Lumina 2", details
 
@@ -801,8 +879,8 @@ def _detect_zimage_variant(keys, shapes, details):
     if "lumina" in key_blob:
         return "Lumina 2", details
 
-    # Default to Z-Image (more common)
-    return "Z-Image", details
+    # Canonical fallback handled by _zimage_label (Turbo unless explicit Base).
+    return _zimage_label(metadata, key_blob), details
 
 
 def _detect_wan_variant(keys, shapes, total_params, metadata, details):
@@ -877,7 +955,7 @@ def _detect_wan_variant(keys, shapes, total_params, metadata, details):
     return wan_ver, details
 
 
-def _detect_from_dims(keys, shapes, total_params, details):
+def _detect_from_dims(keys, shapes, total_params, metadata, details):
     """Last-resort dimension-based detection for ambiguous blocks.{N} models."""
     up_dims = _collect_lora_up_dims(keys, shapes)
     if not up_dims:
@@ -890,7 +968,7 @@ def _detect_from_dims(keys, shapes, total_params, details):
 
     # Z-Image: hidden_dim ~3840
     if any(3800 <= d <= 3900 for d in up_dims):
-        return "Z-Image", details
+        return _zimage_label(metadata, "\n".join(keys)), details
     # Hunyuan: hidden_size ~1408
     if any(1400 <= d <= 1420 for d in up_dims):
         return "Hunyuan", details
