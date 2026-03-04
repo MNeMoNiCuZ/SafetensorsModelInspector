@@ -2,6 +2,8 @@
 
 Inspect `.safetensors` models from a desktop GUI and CLI.
 
+<img width="2537" height="1283" alt="image" src="https://github.com/user-attachments/assets/27ce9f06-4c5f-4b32-aee9-bda85ff576b0" />
+
 ## What It Does
 
 - Detects architecture families and variants (Flux, SDXL/SD3, Wan, Hunyuan, Qwen, HiDream, LTX, Z-Image, Chroma, and more)
@@ -92,34 +94,31 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - `Analyze` processes queued inputs
 - `Settings` controls visibility and behavior
 - `Minimize` / `Restore` collapses or expands the top area for more workspace
+ 
+<img width="2547" height="373" alt="image" src="https://github.com/user-attachments/assets/419e5d42-e3f2-469e-8850-633720ac7782" />
 
-Screenshot placeholder:
-
-```md
-![Top Area](docs/screenshots/top-area.png)
-```
 
 ### Tab: Simple Cards
 
 - Lightweight model cards
 - Supports card selection, multi-select, and context menu actions
 
-Screenshot placeholder:
+<img width="1323" height="369" alt="image" src="https://github.com/user-attachments/assets/cb103044-e7b5-450e-b544-a8deaa7e2a8e" />
 
-```md
-![Simple Cards](docs/screenshots/simple-cards.png)
-```
 
 ### Tab: Detailed Cards
 
 - Full card details with configured metadata visibility
 - Supports card selection, multi-select, and context menu actions
 
-Screenshot placeholder:
+<img width="1708" height="1076" alt="image" src="https://github.com/user-attachments/assets/a146a5a7-3a9f-422f-8eee-64efb36af715" />
 
-```md
-![Detailed Cards](docs/screenshots/detailed-cards.png)
-```
+- Supports specific LoRA formats like LoHa, LoKr, GLoRa
+- Some fail sometimes (lycoris)
+
+<img width="2526" height="953" alt="image" src="https://github.com/user-attachments/assets/1ef32b95-868a-4407-8569-8207d68eac3a" />
+
+
 
 ### Tab: Data
 
@@ -128,11 +127,9 @@ Screenshot placeholder:
 - Right-click actions (`View Raw`, `Copy Selected Entries`)
 - Column visibility can be configured in settings
 
-Screenshot placeholder:
+<img width="2385" height="257" alt="image" src="https://github.com/user-attachments/assets/1dcd1a23-ca36-433e-8e77-9252cfcc0208" />
 
-```md
-![Data Tab](docs/screenshots/data-tab.png)
-```
+
 
 ### Tab: Raw
 
@@ -140,11 +137,8 @@ Screenshot placeholder:
 - `View Raw` context action jumps here for the selected model
 - `Ctrl+C` copies the selected text, or the full raw content when no selection exists
 
-Screenshot placeholder:
+<img width="2442" height="726" alt="image" src="https://github.com/user-attachments/assets/4c2f9d4d-1476-4348-b872-06c282a80007" />
 
-```md
-![Raw Tab](docs/screenshots/raw-tab.png)
-```
 
 ## Notes
 
