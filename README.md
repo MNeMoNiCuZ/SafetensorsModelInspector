@@ -103,8 +103,7 @@ py inspect_model.py path\to\folder --recursive --allow-filename-alias-detection
 - Lightweight model cards
 - Supports card selection, multi-select, and context menu actions
 
-<img width="1323" height="369" alt="image" src="https://github.com/user-attachments/assets/cb103044-e7b5-450e-b544-a8deaa7e2a8e" />
-
+<img width="1323" height="369" alt="image" src="https://github.com/user-attachments/assets/09cae186-42b5-4c57-be21-611ff8a11396" />
 
 ### Tab: Detailed Cards
 
