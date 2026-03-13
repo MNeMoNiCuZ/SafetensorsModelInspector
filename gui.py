@@ -13,7 +13,7 @@ from pathlib import Path
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QTimer, QSettings
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QFont, QKeySequence, QAction, QShortcut
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QFont, QKeySequence, QAction, QShortcut, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QTabWidget, QScrollArea,
@@ -27,6 +27,12 @@ from PyQt6.QtWidgets import (
 from inspect_model import (
     inspect_file, generate_modelinfo_dump,
 )
+
+
+def _asset(name: str) -> str:
+    """Resolve path to a bundled asset; works both in dev and when frozen by PyInstaller."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return str(base / "src" / "assets" / name)
 
 
 # ---------------------------------------------------------------------------
@@ -800,6 +806,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Safetensors Model Inspector")
+        self.setWindowIcon(QIcon(_asset("icon.png")))
         self.setMinimumSize(1050, 720)
         self.resize(1100, 780)
         QTimer.singleShot(0, self._center_window)
@@ -2056,6 +2063,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setStyleSheet(DARK_STYLE)
+    app.setWindowIcon(QIcon(_asset("icon.png")))
 
     window = MainWindow()
     window.show()

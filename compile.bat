@@ -26,10 +26,28 @@ if %ERRORLEVEL% neq 0 (
     pip install pyinstaller
 )
 
+:: Ensure Pillow is installed (needed for PNG -> ICO conversion)
+pip show pillow >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo [INFO] Pillow not found in venv. Installing...
+    pip install pillow
+)
+
+:: Convert icon.png to icon.ico (Windows executables require .ico)
+echo Converting icon.png to icon.ico...
+python -c "from PIL import Image; img = Image.open('src/assets/icon.png'); img.save('src/assets/icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Icon conversion failed.
+    pause
+    exit /b 1
+)
+
 :: Run PyInstaller
 echo Starting compilation...
 pyinstaller --noconfirm --onefile --windowed ^
     --name "SafetensorsModelInspector" ^
+    --icon "src/assets/icon.ico" ^
+    --add-data "src/assets/icon.png;src/assets" ^
     --clean ^
     "gui.py"
 
