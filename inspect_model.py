@@ -142,6 +142,97 @@ def detect_components(keys: list[str]):
     return components
 
 
+def _tensor_component_bucket(key: str) -> str | None:
+    """Map a tensor key to a high-level model component bucket."""
+    if key.startswith("model.diffusion_model."):
+        return "unet"
+    if ("double_blocks." in key or "single_blocks." in key or
+            "single_transformer_blocks." in key or key.startswith("transformer.") or
+            key.startswith("model.double_layers.") or
+            key.startswith("model.single_layers.")):
+        return "transformer"
+    if key.startswith("first_stage_model."):
+        return "vae"
+    if (key.startswith("vae.") or
+            (key.startswith("encoder.") and "text" not in key) or
+            (key.startswith("decoder.") and "text" not in key)):
+        return "vae"
+    if key.startswith("text_encoder_2."):
+        return "text_encoder_2"
+    if (key.startswith("cond_stage_model.") or key.startswith("text_encoder.") or
+            key.startswith("conditioner.embedders.") or key.startswith("text_encoders.")):
+        return "text_encoder"
+    return None
+
+
+def _summarize_dtype_mix(dtype_counts: Counter, total_tensors: int) -> str:
+    """Summarize a dtype counter using the same outlier tolerance as global precision."""
+    if not dtype_counts or total_tensors <= 0:
+        return "-"
+    if len(dtype_counts) == 1:
+        only = next(iter(dtype_counts.keys()))
+        return DTYPE_FRIENDLY.get(only, only)
+
+    dominant_dtype, dominant_count = dtype_counts.most_common(1)[0]
+    dominant_pct = dominant_count / total_tensors * 100
+    if dominant_pct >= 99.0:
+        return DTYPE_FRIENDLY.get(dominant_dtype, dominant_dtype)
+    return "Mixed (" + ", ".join(
+        DTYPE_FRIENDLY.get(d, d) for d, _ in dtype_counts.most_common()
+    ) + ")"
+
+
+def analyze_component_precisions(tensor_info: dict) -> dict[str, Counter]:
+    """Build per-component dtype counters from tensor keys."""
+    component_dtypes: dict[str, Counter] = {}
+    for name, info in tensor_info.items():
+        bucket = _tensor_component_bucket(name)
+        if not bucket:
+            continue
+        dtype = info.get("dtype", "unknown")
+        if bucket not in component_dtypes:
+            component_dtypes[bucket] = Counter()
+        component_dtypes[bucket][dtype] += 1
+    return component_dtypes
+
+
+def build_component_precision_summary(component_dtypes: dict[str, Counter]) -> str:
+    """Render per-component precision summary for mixed checkpoints."""
+    ordered_labels = [
+        ("unet", "UNet"),
+        ("transformer", "Transformer"),
+        ("vae", "VAE"),
+        ("text_encoder", "Text Encoder"),
+        ("text_encoder_2", "Text Encoder 2"),
+    ]
+    parts = []
+    for key, label in ordered_labels:
+        dtype_counts = component_dtypes.get(key)
+        if not dtype_counts:
+            continue
+        summary = _summarize_dtype_mix(dtype_counts, sum(dtype_counts.values()))
+        parts.append(f"{label}: {summary}")
+    return " | ".join(parts)
+
+
+def build_component_precision_map(component_dtypes: dict[str, Counter]) -> dict[str, str]:
+    """Return per-component precision summaries keyed by component id."""
+    ordered_keys = [
+        "unet",
+        "transformer",
+        "vae",
+        "text_encoder",
+        "text_encoder_2",
+    ]
+    out: dict[str, str] = {}
+    for key in ordered_keys:
+        dtype_counts = component_dtypes.get(key)
+        if not dtype_counts:
+            continue
+        out[key] = _summarize_dtype_mix(dtype_counts, sum(dtype_counts.values()))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Architecture detection
 # ---------------------------------------------------------------------------
@@ -1219,19 +1310,14 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         })
 
     # Precision summary
-    if len(dtypes) == 1:
-        only = list(dtypes.keys())[0]
-        precision_summary = DTYPE_FRIENDLY.get(only, only)
+    precision_summary = _summarize_dtype_mix(dtypes, len(tensor_info))
+    component_dtypes = analyze_component_precisions(tensor_info)
+    component_precision_summary = build_component_precision_summary(component_dtypes)
+    component_precisions = build_component_precision_map(component_dtypes)
+    if precision_summary.startswith("Mixed (") and component_precision_summary:
+        precision_display = component_precision_summary
     else:
-        dominant_count = dtypes.most_common(1)[0][1]
-        dominant_dtype = dtypes.most_common(1)[0][0]
-        dominant_pct = dominant_count / len(tensor_info) * 100
-        if dominant_pct >= 99.0:
-            precision_summary = DTYPE_FRIENDLY.get(dominant_dtype, dominant_dtype)
-        else:
-            precision_summary = "Mixed (" + ", ".join(
-                DTYPE_FRIENDLY.get(d, d) for d, _ in dtypes.most_common()
-            ) + ")"
+        precision_display = precision_summary
 
     # Component booleans (exclude the dict-type text_encoders from simple flags)
     comp_flags = {k: v for k, v in components.items() if k != "text_encoders"}
@@ -1289,6 +1375,9 @@ def inspect_file(filepath: str, options: dict | None = None) -> dict:
         "training_meta": training_meta,
         "dtypes": dtype_list,
         "precision_summary": precision_summary,
+        "component_precision_summary": component_precision_summary,
+        "component_precisions": component_precisions,
+        "precision_display": precision_display,
         "metadata": metadata,
         "extra": extra,
     }

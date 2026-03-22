@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-Safetensors Model Inspector — PyQt6 GUI
+Safetensors Model Inspector â€” PyQt6 GUI
 Dark-mode interface with drag-and-drop, card view, and data table view.
 """
 
@@ -595,6 +595,19 @@ class ModelCard(QFrame):
         self._selected = False
         self._simple_view = bool(simple_view)
         self._card_fields = card_fields or {}
+        precision_text = (
+            data.get("precision_display")
+            or data.get("component_precision_summary")
+            or data.get("precision_summary", "-")
+        )
+        component_precisions = data.get("component_precisions") or {}
+        component_precision_labels = [
+            ("unet", "UNet Precision"),
+            ("transformer", "Transformer Precision"),
+            ("vae", "VAE Precision"),
+            ("text_encoder", "Text Encoder Precision"),
+            ("text_encoder_2", "Text Encoder 2 Precision"),
+        ]
         self.setStyleSheet("""
             ModelCard {
                 background-color: #181825;
@@ -665,7 +678,15 @@ class ModelCard(QFrame):
             if self._card_fields.get("parameters", True):
                 simple_stats.append(("Parameters", data["total_params_friendly"]))
             if self._card_fields.get("precision", True):
-                simple_stats.append(("Precision", data["precision_summary"]))
+                added_component_precision = False
+                for comp_key, comp_label in component_precision_labels:
+                    comp_precision = component_precisions.get(comp_key)
+                    if not comp_precision:
+                        continue
+                    simple_stats.append((comp_label, comp_precision))
+                    added_component_precision = True
+                if not added_component_precision:
+                    simple_stats.append(("Precision", precision_text))
             if self._card_fields.get("file_size", False):
                 simple_stats.append(("File Size", data["file_size_friendly"]))
             if self._card_fields.get("tensors", False):
@@ -687,6 +708,8 @@ class ModelCard(QFrame):
                     lbl = QLabel(label)
                     lbl.setStyleSheet("color: #6c7086; font-size: 11px; background: transparent; border: none;")
                     val = QLabel(value)
+                    if "Precision" in label:
+                        val.setWordWrap(True)
                     val.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;")
                     mini_grid.addWidget(lbl, i // 2, (i % 2) * 2)
                     mini_grid.addWidget(val, i // 2, (i % 2) * 2 + 1)
@@ -703,7 +726,15 @@ class ModelCard(QFrame):
         if self._card_fields.get("file_size", True):
             stats.append(("File Size", data["file_size_friendly"]))
         if self._card_fields.get("precision", True):
-            stats.append(("Precision", data["precision_summary"]))
+            added_component_precision = False
+            for comp_key, comp_label in component_precision_labels:
+                comp_precision = component_precisions.get(comp_key)
+                if not comp_precision:
+                    continue
+                stats.append((comp_label, comp_precision))
+                added_component_precision = True
+            if not added_component_precision:
+                stats.append(("Precision", precision_text))
         if self._card_fields.get("tensors", True):
             stats.append(("Tensors", str(data["tensor_count"])))
         # Add LoRA rank if present
@@ -725,6 +756,8 @@ class ModelCard(QFrame):
             lbl = QLabel(label)
             lbl.setStyleSheet("color: #6c7086; font-size: 11px; background: transparent; border: none;")
             val = QLabel(value)
+            if "Precision" in label:
+                val.setWordWrap(True)
             val.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold; background: transparent; border: none;")
             grid.addWidget(lbl, i // 2, (i % 2) * 2)
             grid.addWidget(val, i // 2, (i % 2) * 2 + 1)
@@ -926,7 +959,7 @@ class MainWindow(QMainWindow):
         browse_folder_btn.setFixedWidth(150)
         btn_row_1.addWidget(browse_folder_btn)
 
-        self.fold_toggle_btn = QPushButton("▲ Minimize")
+        self.fold_toggle_btn = QPushButton("â–² Minimize")
         self.fold_toggle_btn.setFixedWidth(150)
         self.fold_toggle_btn.clicked.connect(self._toggle_top_fold)
         btn_row_1.addWidget(self.fold_toggle_btn)
@@ -960,7 +993,7 @@ class MainWindow(QMainWindow):
         fold_only_layout = QHBoxLayout(self.fold_only_bar)
         fold_only_layout.setContentsMargins(0, 0, 0, 0)
         fold_only_layout.setSpacing(0)
-        self.fold_only_btn = QPushButton("▼ Restore")
+        self.fold_only_btn = QPushButton("â–¼ Restore")
         self.fold_only_btn.clicked.connect(self._toggle_top_fold)
         self.fold_only_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         fold_only_layout.addWidget(self.fold_only_btn)
@@ -1054,7 +1087,7 @@ class MainWindow(QMainWindow):
 
         self._table_columns = [
             "", "File", "File Size", "Architecture", "Model Type", "Adapter",
-            "Precision", "UNet", "VAE", "Text Encoder", "Transformer",
+            "Precision", "UNet Precision", "VAE Precision", "Text Encoder Precision", "Transformer Precision",
             "Parameters", "Tensors", "LoRA Rank",
             "Software", "Images", "Resolution", "Epochs", "Steps",
         ]
@@ -1071,11 +1104,11 @@ class MainWindow(QMainWindow):
         self.table.setColumnWidth(3, 140)   # Architecture
         self.table.setColumnWidth(4, 100)   # Model Type
         self.table.setColumnWidth(5, 90)    # Adapter
-        self.table.setColumnWidth(6, 95)    # Precision
-        self.table.setColumnWidth(7, 60)    # UNet
-        self.table.setColumnWidth(8, 60)    # VAE
-        self.table.setColumnWidth(9, 130)   # Text Encoder
-        self.table.setColumnWidth(10, 90)   # Transformer
+        self.table.setColumnWidth(6, 100)   # Precision
+        self.table.setColumnWidth(7, 115)   # UNet
+        self.table.setColumnWidth(8, 115)   # VAE
+        self.table.setColumnWidth(9, 160)   # Text Encoder
+        self.table.setColumnWidth(10, 120)  # Transformer
         self.table.setColumnWidth(11, 95)   # Parameters
         self.table.setColumnWidth(12, 70)   # Tensors
         self.table.setColumnWidth(13, 85)   # LoRA Rank
@@ -1172,14 +1205,14 @@ class MainWindow(QMainWindow):
             self.top_row.setVisible(False)
             self.controls_container.setVisible(False)
             self.fold_only_bar.setVisible(True)
-            self.fold_toggle_btn.setText("▼ Restore")
-            self.fold_only_btn.setText("▼ Restore")
+            self.fold_toggle_btn.setText("â–¼ Restore")
+            self.fold_only_btn.setText("â–¼ Restore")
         else:
             self.top_row.setVisible(True)
             self.controls_container.setVisible(True)
             self.fold_only_bar.setVisible(False)
-            self.fold_toggle_btn.setText("▲ Minimize")
-            self.fold_only_btn.setText("▲ Minimize")
+            self.fold_toggle_btn.setText("â–² Minimize")
+            self.fold_only_btn.setText("â–² Minimize")
 
     def _on_copy_shortcut(self):
         tab = self.tabs.currentIndex()
@@ -1434,6 +1467,9 @@ class MainWindow(QMainWindow):
             "total_params_friendly": "-",
             "file_size_friendly": "-",
             "precision_summary": "-",
+            "component_precision_summary": "-",
+            "component_precisions": {},
+            "precision_display": "-",
             "tensor_count": 0,
             "components": {},
             "named_text_encoders": {},
@@ -1532,30 +1568,38 @@ class MainWindow(QMainWindow):
         self.table.insertRow(row)
 
         comps = data.get("components", {})
+        component_precisions = data.get("component_precisions") or {}
         training_meta = data.get("training_meta", {})
         filepath = data.get("filepath", "")
 
         # UNet column
-        unet_str = "Yes" if comps.get("unet") else "-"
+        unet_str = component_precisions.get("unet") or ("Yes" if comps.get("unet") else "-")
 
         # Transformer column
-        trans_str = "Yes" if comps.get("transformer") else "-"
+        trans_str = component_precisions.get("transformer") or ("Yes" if comps.get("transformer") else "-")
 
         # VAE column
-        vae_str = "Yes" if comps.get("vae") else "-"
+        vae_str = component_precisions.get("vae") or ("Yes" if comps.get("vae") else "-")
 
-        # Text encoder column — list named encoders, fall back to generic flags
-        enc_parts = []
-        for enc_name in data.get("named_text_encoders", {}):
-            enc_parts.append(enc_name)
-        if not enc_parts:
-            if comps.get("text_encoder") and comps.get("text_encoder_2"):
-                enc_parts = ["CLIP", "CLIP 2"]
-            elif comps.get("text_encoder"):
-                enc_parts = ["Yes"]
-            elif comps.get("text_encoder_2"):
-                enc_parts = ["Text Enc 2"]
-        text_enc_str = ", ".join(enc_parts) if enc_parts else "-"
+        # Text encoder column - precision labels for TE1/TE2 where available.
+        text_enc_parts = []
+        te1 = component_precisions.get("text_encoder")
+        te2 = component_precisions.get("text_encoder_2")
+        if te1:
+            text_enc_parts.append(f"TE1: {te1}")
+        if te2:
+            text_enc_parts.append(f"TE2: {te2}")
+        if not text_enc_parts:
+            for enc_name in data.get("named_text_encoders", {}):
+                text_enc_parts.append(enc_name)
+            if not text_enc_parts:
+                if comps.get("text_encoder") and comps.get("text_encoder_2"):
+                    text_enc_parts = ["CLIP, CLIP 2"]
+                elif comps.get("text_encoder"):
+                    text_enc_parts = ["Yes"]
+                elif comps.get("text_encoder_2"):
+                    text_enc_parts = ["Text Enc 2"]
+        text_enc_str = ", ".join(text_enc_parts) if text_enc_parts else "-"
 
         # LoRA rank
         lora_rank = data.get("lora_rank")
@@ -1567,7 +1611,7 @@ class MainWindow(QMainWindow):
             data["architecture"],
             data["model_type"],
             data.get("adapter_type") or "-",
-            data["precision_summary"],
+            data.get("precision_summary", "-"),
             unet_str,
             vae_str,
             text_enc_str,
@@ -1594,6 +1638,8 @@ class MainWindow(QMainWindow):
             if col == 1:
                 item.setToolTip(filepath)
                 item.setData(Qt.ItemDataRole.UserRole, filepath)
+            else:
+                item.setToolTip(str(val))
             self.table.setItem(row, col, item)
 
         if filepath:
@@ -1781,7 +1827,28 @@ class MainWindow(QMainWindow):
         if fields.get("parameters", True):
             lines.append(f"Parameters: {data.get('total_params_friendly', '-')}")
         if fields.get("precision", True):
-            lines.append(f"Precision: {data.get('precision_summary', '-')}")
+            component_precisions = data.get("component_precisions") or {}
+            added_component_precision = False
+            component_precision_labels = [
+                ("unet", "UNet Precision"),
+                ("transformer", "Transformer Precision"),
+                ("vae", "VAE Precision"),
+                ("text_encoder", "Text Encoder Precision"),
+                ("text_encoder_2", "Text Encoder 2 Precision"),
+            ]
+            for comp_key, comp_label in component_precision_labels:
+                comp_precision = component_precisions.get(comp_key)
+                if not comp_precision:
+                    continue
+                lines.append(f"{comp_label}: {comp_precision}")
+                added_component_precision = True
+            if not added_component_precision:
+                precision_text = (
+                    data.get("precision_display")
+                    or data.get("component_precision_summary")
+                    or data.get("precision_summary", "-")
+                )
+                lines.append(f"Precision: {precision_text}")
         if fields.get("file_size", True):
             lines.append(f"File Size: {data.get('file_size_friendly', '-')}")
         if fields.get("tensors", True):
@@ -2072,3 +2139,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
